@@ -1,0 +1,75 @@
+run_name: train_onepose
+save_dir: runs
+seed: 42
+
+model:
+  backbone: 
+    name: vggt
+    pretrained_vggt: null # facebook/VGGT-1B
+    freeze: False
+    img_size: 224
+    patch_size: 14
+    embed_dim: 384
+    depth: 8
+    num_heads: 4
+    mlp_ratio: 2
+    patch_embed: dinov2_vits14_reg
+    load_pretrained_dino_weights: True
+  posehead:
+    name: bboxconf
+    dim_in: 768
+    trunk_depth: 4
+    pose_encoding_type: SITE_6DRot
+    num_heads: 8
+    mlp_ratio: 2
+    init_values: 0.01
+    trans_act: linear
+    quat_act: linear
+
+data: 
+  data_json: assets/onepose_train.json
+  data_root: dataset/OnePose/train_data
+  image_size: 512
+  num_ref_images: 16
+  target_size: ${model.backbone.img_size}
+  interval: 1
+  random_ref: True
+  normalize_scale: True
+
+checkpoint: # runs/ckpt_115000.pt
+train:
+  master_addr: localhost
+  master_port: 12345
+  log_dir: logs/onepose_train_debug
+  refine_average: False
+  batch_size: 2
+  max_epochs: 50
+  lr: 1e-4
+  warmup_steps: 300
+  num_workers: 4
+  save_itr: 500
+  metric_period: 1
+  val_period: 200
+  pose_loss_type: weight  #  average | best | weight
+  conf_T: 0.001
+  loss_weights:
+    weight_center: 1
+    weight_depth: 0.1
+    weight_rot: 1
+    weight_conf: 0.1
+    weight_conf_l1: 0
+    weight_conf_kl: 0.1
+
+val:
+  data:
+    random_ref: True
+    data_json: assets/onepose_val.json
+    data_root: dataset/OnePose/val_data
+    image_size: [512, 512] 
+    target_size: ${model.backbone.img_size}
+    num_ref_images: 16
+    interval: 5
+    normalize_scale: True
+
+pred_conf: True
+gpus: 1
