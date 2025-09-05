@@ -1,10 +1,24 @@
-torch==2.3.1
-torchvision==0.18.1
-numpy
+# torch==2.0.1
+# torchvision==0.18.1
+numpy==1.26.4
 Pillow
 huggingface_hub
 einops
 safetensors
-flash-attention
-exps
-logs
+trimesh
+omegaconf
+tensorboard
+lion_pytorch
+opencv-python
+albumentations
+imageio
+joblib
+psutil
+pandas
+open3d
+transformations
+ruamel.yaml
+numba
+"git+https://github.com/facebookresearch/pytorch3d.git"
+"git+https://github.com/NVlabs/nvdiffrast.git"
+# flash-attention

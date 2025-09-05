@@ -52,15 +52,15 @@ train:
   master_port: 12345
   log_dir: logs/onepose_train
   refine_average: False
-  batch_size: 4
-  max_epochs: 10
+  batch_size: 6
+  max_epochs: 100
   lr: 1e-4
   warmup_steps: 1000
   num_workers: 2
   save_itr: 10000
   metric_period: 100
   val_period: 2000
-  occlusion_threshold: 0.8
+  occlusion_threshold: 0.2
   pose_loss_type: weight  #  average | best | weight
   conf_T: 1.0
   loss_weights:
@@ -80,4 +80,4 @@ val:
     augment: False
 
 pred_conf: True
-gpus: 2
+gpus: 4

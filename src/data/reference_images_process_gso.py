@@ -76,7 +76,7 @@ def get_extrinsics(n, radius=10, center=(0, 0, 0)):
 
     return np.array(extrinsics)
 
-def get_reference_images(model_path, ref_image_size, ref_image_num, radius=3, center=(0, 0, 0), fov_y_deg=75, device='cuda', save_path=None):
+def get_reference_images(model_path, ref_image_size, ref_image_num, radius=2.5, center=(0, 0, 0), fov_y_deg=75, device='cuda', save_path=None):
     # Use the normalized mesh
     if not 'model_n' in model_path:
         model_path = model_path.replace("model/", "model_n/")

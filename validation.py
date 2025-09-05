@@ -1,6 +1,7 @@
 import torch
 import cv2
 import numpy as np
+import time
 
 from src.data.onepose import Onepose
 from tqdm import tqdm
@@ -10,42 +11,40 @@ from src.metrics.pose_metric import rotation_matrix_angle_error
 from src.losses.loss import cal_loss
 from src.losses.loss_with_conf import cal_loss_with_confidence, compute_camera_loss
 from utils.math_utils import sigmoid
+from src.utils.pixel_voting import find_keypoints_from_vector_map
 
-def compute_metrics(pred_bbox, pred_conf, query_info, ref_info, config, is_train=True):
+def compute_metrics(pred_pv_map_offset, pred_confs, query_info, ref_info, config, is_train=True):
     query_pose = query_info['query_pose'].numpy()
     query_intrinsics = query_info['query_intrinsics'].numpy()
     gt_query_bbox = query_info['bbox_2d'].numpy()
     ref_bbox = ref_info['bbox_2d'].numpy()
     bbox_3d = ref_info['bbox_3d'].numpy()
+    ref_pv_maps = ref_info['pv_maps'].numpy()
 
-    # Predicted rotation residual
-    # all_pred_poses = pred[0].detach().to(torch.float32).cpu().numpy()  #  (B, N, 9)
-    # all_pred_conf_logits = pred[1][:, 1:].detach().to(torch.float32).cpu().numpy()  #  (B, N, 1)
-    pred_bbox = pred_bbox[:, 1:].detach().to(torch.float32).cpu().numpy()  # Ignore the first pose (B, N-1, 16)
-    pred_conf = pred_conf[:, 1:, 0].detach().to(torch.float32).cpu().numpy()  # Ignore the first confidence (B, N-1, 1)
-    residual_bbox_pred = pred_bbox
-    # Select the residual with highest confidence
-    pred_conf = sigmoid(pred_conf) 
-    best_pred_indices = np.argmax(pred_conf, axis=1)
+    B = pred_pv_map_offset.shape[0]
 
-    B = ref_bbox.shape[0]
-    residual_bbox_pred_best = residual_bbox_pred[np.arange(B), best_pred_indices].reshape(-1, 8, 2)
-    # Ref rotation matrices
-    ref_bbox_best = ref_bbox[np.arange(B), best_pred_indices]
-    # Compute the query bbox
-    query_bbox_pred = (ref_bbox_best - residual_bbox_pred_best) * config.data.target_size
-    # query_bbox_pred = query_info['bbox_2d'].numpy()* config.data.target_size
-    # Compute query pos via pnp
+    # 选择置信度最高的参考视图
+    pred_confs = sigmoid(pred_confs[:, :1].to(torch.float32).cpu().numpy()) 
+    best_pred_indices = np.argmax(pred_confs, axis=1)
+    ref_pv_maps_best = ref_pv_maps[np.arange(ref_pv_maps.shape[0]), best_pred_indices]
+    pred_pv_map_offset_best = pred_pv_map_offset[np.arange(pred_pv_map_offset.shape[0]), best_pred_indices+1].to(torch.float32).cpu().numpy()
+    ref_bbox_best = ref_bbox[np.arange(ref_bbox.shape[0]), best_pred_indices]   
+    # 计算查询图像的向量图
+    query_pv_maps = pred_pv_map_offset_best + ref_pv_maps_best
+    # 计算关键点坐标，RANSAC
     query_rot_pred = np.zeros((B, 3, 3))
     query_trans_pred = np.zeros((B, 3))
+    keypoints_coords_list = []
     for i in range(B):
-        query_rot_pred[i], query_trans_pred[i] = compute_pose_via_pnp(query_bbox_pred[i], bbox_3d[i], query_intrinsics[i][0])
+        keypoints_coords = find_keypoints_from_vector_map(query_pv_maps[i, 0])
+        keypoints_coords_list.append(keypoints_coords)
+        query_rot_pred[i], query_trans_pred[i] = compute_pose_via_pnp(keypoints_coords, bbox_3d[i], query_intrinsics[i][0])
     
     # Compute metrics
     rotation_angle_error = rotation_matrix_angle_error(query_rot_pred, query_pose[:, 0, :3, :3])
     translation_error = np.linalg.norm(query_trans_pred - query_pose[:, 0, :3, 3]) * 1000
 
-    return np.mean(rotation_angle_error), np.mean(translation_error), query_bbox_pred[0], gt_query_bbox[0, 0], ref_bbox_best[0], best_pred_indices[0]
+    return np.mean(rotation_angle_error), np.mean(translation_error), keypoints_coords_list[0], gt_query_bbox[0, 0], ref_bbox_best[0, 0], best_pred_indices[0, 0]
     
 
 def validate_model(model, config, device, writer=None):
@@ -69,7 +68,7 @@ def validate_model(model, config, device, writer=None):
     print("Starting validation...")
     loss_dict_all = {
         "total_loss": 0,
-        "loss_bbox": 0,
+        "loss_pv_map": 0,
         "loss_conf": 0,
     }
     len_data = len(data_loader)
@@ -77,13 +76,11 @@ def validate_model(model, config, device, writer=None):
     with torch.no_grad():
         dtype = torch.bfloat16 if torch.cuda.get_device_capability()[0] >= 8 else torch.float16
         for idx, data in tqdm(enumerate(data_loader)):
-
             with torch.cuda.amp.autocast(dtype=dtype):
                 # Forward pass
-                outputs = model(data, device)
-
+                pred_pv_map_offset, pred_conf = model(data, device)
             # Calculate loss
-            _, loss_dict = compute_camera_loss(outputs[0], outputs[1], data, config=config)
+            _, loss_dict = cal_loss(pred_pv_map_offset, pred_conf, data, config=config)
             
             for key, value in loss_dict.items():
                 loss_dict_all[key] += value.item() / len_data
@@ -91,7 +88,8 @@ def validate_model(model, config, device, writer=None):
             # Compute metrics
             query_info = data['query_info']
             ref_info = data['ref_info']
-            rotation_angle_error, translation_error, query_bbox, gt_query_bbox, ref_bbox, ref_indice = compute_metrics(outputs[0][-1], outputs[1][-1], query_info, ref_info, config, is_train=False)
+            # gt_pv_map_offset = data['pv_maps_offset'].to(pred_pv_map_offset.device)
+            rotation_angle_error, translation_error, query_bbox, gt_query_bbox, ref_bbox, ref_indice = compute_metrics(pred_pv_map_offset, pred_conf, query_info, ref_info, config, is_train=False)
             if idx % vis_itr == 0:
                 vis_image = vis(data['images'][0, 0], query_bbox, gt_query_bbox, config)
                 vis_images.append(vis_image)

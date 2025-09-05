@@ -348,7 +348,7 @@ class Gso(Dataset):
         query_image, query_bbox_center, query_bbox_shape, query_zoom_ratio = self.augment_image(crop_rgb.transpose(2, 0, 1)[None, ...])
 
         # Get references
-        local_ref = osp.join(data["obj_model"], "ref_rendered")
+        local_ref = osp.join(data["obj_model"].replace('model_n', 'ref_rendered'))
         if osp.exists(local_ref):
             with open(osp.join(local_ref, 'data.pkl'), "rb") as f:
                 local_ref_data = pickle.load(f)

@@ -7,3 +7,4 @@ logs
 runs
 io_test.py
 /assets0728/
+dinov2_vits14_reg4_pretrain.pth

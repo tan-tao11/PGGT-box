@@ -21,6 +21,8 @@ def parse_args():
     parser.add_argument('--config', type=str, required=True, help='Path to the config file')
     parser.add_argument('--master_addr', type=str, default='localhost', help='Master address for distributed training')
     parser.add_argument('--master_port', type=int, default=12345, help='Master port for distributed training')
+    parser.add_argument('--nnodes', type=int, default=1, help='Number of nodes for distributed training')
+    parser.add_argument('--node_rank', type=int, default=0, help='Rank of the current node')
     args = parser.parse_args()
     return args
 
@@ -50,6 +52,7 @@ def setup_environment(args):
         raise FileNotFoundError(f"Config file {args.config} does not exist.")
     
     config = OmegaConf.load(args.config)
+    config.update(args.__dict__)
     # if 'seed' in config:
     if config.get('seed') is not None:
         seed_anything(config.seed)

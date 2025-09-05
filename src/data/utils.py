@@ -208,20 +208,20 @@ def get_transform(config):
         # ✅ 随机裁剪+缩放
         A.RandomResizedCrop(size=(target_size, target_size), scale=(0.8, 1.0), ratio=(0.75, 1.33), p=1.0),
         # ✅ 颜色增强
-        # A.ColorJitter(brightness=0.3, contrast=0.3, saturation=0.3, hue=0.1, p=0.5),
-        # # ✅ 模糊 or 噪声
-        # A.OneOf([
-        #     A.GaussianBlur(blur_limit=(1, 3), p=0.5),
-        #     A.GaussNoise(std_range=(0.1, 0.3), p=0.5),
-        # ], p=0.3),
-        # # ✅ 遮挡（Cutout）
-        # A.CoarseDropout(
-        #     num_holes_range=(1, 3),
-        #     hole_height_range=(target_size // 10, target_size // 5),
-        #     hole_width_range=(target_size // 10, target_size // 5),
-        #     fill="random_uniform",
-        #     p=0.1
-        # ),
+        A.ColorJitter(brightness=0.3, contrast=0.3, saturation=0.3, hue=0.1, p=0.5),
+        # ✅ 模糊 or 噪声
+        A.OneOf([
+            A.GaussianBlur(blur_limit=(1, 3), p=0.5),
+            A.GaussNoise(std_range=(0.1, 0.3), p=0.5),
+        ], p=0.3),
+        # ✅ 遮挡（Cutout）
+        A.CoarseDropout(
+            num_holes_range=(1, 3),
+            hole_height_range=(target_size // 10, target_size // 5),
+            hole_width_range=(target_size // 10, target_size // 5),
+            fill="random_uniform",
+            p=0.2
+        ),
         # ✅ 标准化 & 转 Tensor
         A.Normalize(mean=(0.485, 0.456, 0.406),  # DINOv2 官方 mean/std
                 std=(0.229, 0.224, 0.225)),

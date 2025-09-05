@@ -6,6 +6,7 @@ import torch.distributed as dist
 import torch.nn as nn
 import numpy as np
 import random
+import time
 
 from omegaconf import OmegaConf
 from datetime import timedelta
@@ -28,9 +29,15 @@ from utils.comman_utils import generate_uuid_string
 def train_worker(gpu_id: int, config: OmegaConf):
     """Train diffusion model on the specified GPU."""
     # Initialize the process group for distributed training
-    world_size = config.gpus
+    world_size = config.gpus * config.nnodes
+    global_rank = config.node_rank * config.gpus + gpu_id
+    print(f"Global rank: {global_rank}")
     dist.init_process_group(
-        backend="nccl", timeout=timedelta(seconds=7200), rank=gpu_id, world_size=world_size
+        backend="nccl", 
+        init_method=f"tcp://{config.master_addr}:{config.master_port}",
+        timeout=timedelta(seconds=7200), 
+        rank=global_rank, 
+        world_size=world_size
     )
 
     # Set the device for the current process
@@ -48,10 +55,6 @@ def train_worker(gpu_id: int, config: OmegaConf):
     )
 
     # Load dataset and data loader
-    print("Loading OnePose dataset...")
-    OnePose_data = Onepose(config)
-    print("Loading Gso dataset...")
-    Gso_data = Gso(config, device)
     # repeat_factor = len(Gso_data) // len(OnePose_data)
     # if repeat_factor > 1:
     #     OnePose_data = ConcatDataset([OnePose_data] * repeat_factor)
@@ -69,7 +72,8 @@ def train_worker(gpu_id: int, config: OmegaConf):
     #     sampler=train_sampler,
     #     persistent_workers=False,
     # )
-
+    print("Loading OnePose dataset...")
+    OnePose_data = Onepose(config)
     train_dataset = OnePose_data
     train_sampler = torch.utils.data.distributed.DistributedSampler(train_dataset, rank=gpu_id, shuffle=True)
     train_data_loader = torch.utils.data.DataLoader(
@@ -81,18 +85,20 @@ def train_worker(gpu_id: int, config: OmegaConf):
         sampler=train_sampler,
         persistent_workers=False,
     )
-    train_dataset1 = Gso_data
-    train_sampler1 = torch.utils.data.distributed.DistributedSampler(train_dataset1, rank=gpu_id, shuffle=True)
-    train_data_loader1 = torch.utils.data.DataLoader(
-        dataset = train_dataset1,
-        batch_size=config.train.batch_size,
-        shuffle=False,
-        num_workers=config.train.num_workers,
-        pin_memory=True,
-        sampler=train_sampler1,
-        persistent_workers=False,
-    )
-    data1_iter = iter(train_data_loader1)
+    # print("Loading Gso dataset...")
+    # Gso_data = Gso(config, device)
+    # train_dataset1 = Gso_data
+    # train_sampler1 = torch.utils.data.distributed.DistributedSampler(train_dataset1, rank=gpu_id, shuffle=True)
+    # train_data_loader1 = torch.utils.data.DataLoader(
+    #     dataset = train_dataset1,
+    #     batch_size=config.train.batch_size,
+    #     shuffle=False,
+    #     num_workers=config.train.num_workers,
+    #     pin_memory=True,
+    #     sampler=train_sampler1,
+    #     persistent_workers=False,
+    # )
+    # data1_iter = iter(train_data_loader1)
 
     # Initialize the optimizer
     # optimizer = torch.optim.Adam(model.parameters(), lr=config.train.lr)
@@ -167,25 +173,26 @@ def train_worker(gpu_id: int, config: OmegaConf):
     # Training loop
     print("Starting training...")
     # Initialize the scaler
+    t2 = time.time()
     scaler = torch.cuda.amp.GradScaler()
     dtype = torch.bfloat16 if torch.cuda.get_device_capability()[0] >= 8 else torch.float16
     for epoch in range(max_epochs):
         train_sampler.set_epoch(epoch)  # Set the epoch for the sampler
-        train_sampler1.set_epoch(epoch)
+        # train_sampler1.set_epoch(epoch)
         for _, data in enumerate(train_data_loader):
             # Wether to use synthetic data
-            if random.random() < 0.5:
-                data = next(data1_iter)
+            # if random.random() < 0.8:
+            #     data = next(data1_iter)
             # Zero the gradients
             optimizer.zero_grad()
-
             with torch.cuda.amp.autocast(dtype=dtype):
                 # Forward pass
-                pred = model(data, device)
+                pred_pv_map_offset, pred_conf = model(data, device)
                 # with torch.no_grad():
                 #     pred = model(data, device)
             
-            loss, loss_dict = compute_camera_loss(pred[0], pred[1], data, config=config)
+            loss, loss_dict = cal_loss(pred_pv_map_offset.to(torch.float32), pred_conf.to(torch.float32), data, config=config)
+
 
             # Scale the loss
             scaler.scale(loss).backward()
@@ -216,7 +223,7 @@ def train_worker(gpu_id: int, config: OmegaConf):
                 if step % config.train.metric_period == 0:
                     query_info = data['query_info']
                     ref_info = data['ref_info']
-                    rotation_angle_error, translation_error, query_bbox, gt_query_bbox, ref_bbox, ref_indice = compute_metrics(pred[0][-1], pred[1][-1], query_info, ref_info, config)
+                    rotation_angle_error, translation_error, query_bbox, gt_query_bbox, ref_bbox, ref_indice = compute_metrics(pred_pv_map_offset.detach(), pred_conf.detach(), query_info, ref_info, config)
                     vis_query_image = vis(data['images'][0, 0], query_bbox, gt_query_bbox, config)
                     vis_ref_image = vis(data['images'][0, ref_indice+1], ref_bbox, ref_bbox, config)
                     writer.add_scalar('Rotation Angle Error/train', rotation_angle_error, step)

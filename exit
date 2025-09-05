@@ -1,0 +1,120 @@
+[1mdiff --git a/.gitignore b/.gitignore[m
+[1mindex e461fd5..80f2054 100644[m
+[1m--- a/.gitignore[m
+[1m+++ b/.gitignore[m
+[36m@@ -6,4 +6,5 @@[m [mexps[m
+ logs[m
+ runs[m
+ io_test.py[m
+[31m-/assets0728/[m
+\ No newline at end of file[m
+[32m+[m[32m/assets0728/[m
+[32m+[m[32mdinov2_vits14_reg4_pretrain.pth[m
+\ No newline at end of file[m
+[1mdiff --git a/__pycache__/train.cpython-310.pyc b/__pycache__/train.cpython-310.pyc[m
+[1mindex 5e1d8d5..39ef282 100644[m
+Binary files a/__pycache__/train.cpython-310.pyc and b/__pycache__/train.cpython-310.pyc differ
+[1mdiff --git a/__pycache__/train.cpython-39.pyc b/__pycache__/train.cpython-39.pyc[m
+[1mindex c433517..7b9dd95 100644[m
+Binary files a/__pycache__/train.cpython-39.pyc and b/__pycache__/train.cpython-39.pyc differ
+[1mdiff --git a/__pycache__/train_worker.cpython-39.pyc b/__pycache__/train_worker.cpython-39.pyc[m
+[1mindex e09415e..d47346e 100644[m
+Binary files a/__pycache__/train_worker.cpython-39.pyc and b/__pycache__/train_worker.cpython-39.pyc differ
+[1mdiff --git a/__pycache__/validation.cpython-39.pyc b/__pycache__/validation.cpython-39.pyc[m
+[1mindex d336ad4..ebc4f1e 100644[m
+Binary files a/__pycache__/validation.cpython-39.pyc and b/__pycache__/validation.cpython-39.pyc differ
+[1mdiff --git a/configs/train.yaml b/configs/train.yaml[m
+[1mindex eb6eb93..ee2dcf4 100644[m
+[1m--- a/configs/train.yaml[m
+[1m+++ b/configs/train.yaml[m
+[36m@@ -52,15 +52,15 @@[m [mtrain:[m
+   master_port: 12345[m
+   log_dir: logs/onepose_train[m
+   refine_average: False[m
+[31m-  batch_size: 4[m
+[31m-  max_epochs: 10[m
+[32m+[m[32m  batch_size: 6[m
+[32m+[m[32m  max_epochs: 100[m
+   lr: 1e-4[m
+   warmup_steps: 1000[m
+   num_workers: 2[m
+   save_itr: 10000[m
+   metric_period: 100[m
+   val_period: 2000[m
+[31m-  occlusion_threshold: 0.8[m
+[32m+[m[32m  occlusion_threshold: 0.2[m
+   pose_loss_type: weight  #  average | best | weight[m
+   conf_T: 1.0[m
+   loss_weights:[m
+[36m@@ -80,4 +80,4 @@[m [mval:[m
+     augment: False[m
+ [m
+ pred_conf: True[m
+[31m-gpus: 2[m
+[32m+[m[32mgpus: 4[m
+[1mdiff --git a/configs/train_demo.yaml b/configs/train_demo.yaml[m
+[1mindex cd8c842..71984de 100644[m
+[1m--- a/configs/train_demo.yaml[m
+[1m+++ b/configs/train_demo.yaml[m
+[36m@@ -1,6 +1,6 @@[m
+ run_name: train_onepose[m
+ save_dir: runs[m
+[31m-seed: [m
+[32m+[m[32mseed: 42[m
+ [m
+ model:[m
+   backbone: [m
+[36m@@ -28,16 +28,25 @@[m [mmodel:[m
+ [m
+ data: [m
+   data_json: assets/onepose_train_demo.json[m
+[31m-  data_root: data/OnePose_demo/train_data[m
+[32m+[m[32m  data_root: datasets/OnePose_demo/train_data[m
+   image_size: [512, 512] [m
+   num_ref_images: 16[m
+   target_size: ${model.backbone.img_size}[m
+   interval: 1[m
+[31m-  random_ref: True[m
+[32m+[m[32m  random_ref: False[m
+   normalize_scale: True[m
+   augment: True[m
+ [m
+[31m-checkpoint: null # runs/ckpt_004200.pt[m
+[32m+[m[32mdata1:[m
+[32m+[m[32m  data_root: datasets/gso[m
+[32m+[m[32m  data_dict: assets/train_data_gso.json[m
+[32m+[m[32m  data_name:[m[41m [m
+[32m+[m[32m    - gso[m
+[32m+[m[32m  num_sequences: -1[m
+[32m+[m[32m  crop_ratio: 2[m
+[32m+[m[32m  augment: True[m
+[32m+[m
+[32m+[m[32mcheckpoint: null # runs/ckpt_005700.pt[m
+ train:[m
+   master_addr: localhost[m
+   master_port: 12345[m
+[36m@@ -46,26 +55,27 @@[m [mtrain:[m
+   batch_size: 6[m
+   max_epochs: 100[m
+   lr: 1e-4[m
+[31m-  warmup_steps: 500[m
+[31m-  num_workers: 6[m
+[32m+[m[32m  warmup_steps: 300[m
+[32m+[m[32m  num_workers: 2[m
+   save_itr: 1000[m
+   metric_period: 100[m
+   val_period: 500[m
+[31m-  pose_loss_type: weight  #  average | best | weight[m
+[32m+[m[32m  occlusion_threshold: 0.8[m
+   conf_T: 1.0[m
+[32m+[m[32m  smooth_l1_beta: 1.0[m
+   loss_weights:[m
+[31m-    weight_bbox: 1.0[m
+[32m+[m[32m    weight_pv_map: 1.0[m
+     weight_conf: 0.1[m
+ [m
+ val:[m
+   data:[m
+     random_ref: False[m
+     data_json: assets/onepose_val_demo.json[m
+[31m-    data_root: data/OnePose_demo/val

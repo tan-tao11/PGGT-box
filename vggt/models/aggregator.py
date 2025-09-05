@@ -15,6 +15,7 @@ from vggt.layers.block import Block
 from vggt.layers.rope import RotaryPositionEmbedding2D, PositionGetter
 from vggt.layers.vision_transformer import vit_small, vit_base, vit_large, vit_giant2
 from vggt.layers.mlp import Mlp
+from src.utils.pixel_voting import vector_maps_to_patches
 
 logger = logging.getLogger(__name__)
 
@@ -143,23 +144,21 @@ class Aggregator(nn.Module):
 
         # Note: We have two camera tokens, one for the first frame and one for the rest
         # The same applies for register tokens
-        self.camera_token = nn.Parameter(torch.randn(1, 2, 1, embed_dim))
         self.register_token = nn.Parameter(torch.randn(1, 2, num_register_tokens, embed_dim))
         self.confidence_token = nn.Parameter(torch.randn(1, 2, 1, embed_dim))
 
         # Camera information embedding
-        self.bbox_2d_embed = Mlp(
-            in_features=16,
-            hidden_features=embed_dim // 2,
+        self.pv_map_embed = Mlp(
+            in_features=patch_size * patch_size * 16,
+            hidden_features= 1024,
             out_features=embed_dim,
             drop=0.0,
         )
 
         # The patch tokens start after the camera, camera information and register tokens
-        self.patch_start_idx = 1 + 1 + 1 + num_register_tokens
+        self.patch_start_idx = 1 + num_register_tokens
 
         # Initialize parameters with small values
-        nn.init.normal_(self.camera_token, std=1e-6)
         nn.init.normal_(self.register_token, std=1e-6)
         nn.init.normal_(self.confidence_token, std=1e-6)
 
@@ -173,6 +172,8 @@ class Aggregator(nn.Module):
                 torch.FloatTensor(value).view(1, 1, 3, 1, 1),
                 persistent=False,
             )
+
+        self.segment_embedding = nn.Embedding(2, embed_dim) # 0 for query, 1 for reference
 
     def __build_patch_embed__(
         self,
@@ -218,7 +219,7 @@ class Aggregator(nn.Module):
     def forward(
         self,
         images: torch.Tensor,
-        bbox_2d_input: torch.Tensor,
+        pv_maps_input: torch.Tensor,
     ) -> Tuple[List[torch.Tensor], int]:
         """
         Args:
@@ -248,15 +249,27 @@ class Aggregator(nn.Module):
         _, P, C = patch_tokens.shape
 
         # Expand camera and register tokens to match batch size and sequence length
-        camera_token = slice_expand_and_flatten(self.camera_token, B, S)
         register_token = slice_expand_and_flatten(self.register_token, B, S)
         confidence_token = slice_expand_and_flatten(self.confidence_token, B, S)
 
-        bbox_2d_input= bbox_2d_input.view(B * S, -1)
-        camera_info_token = self.bbox_2d_embed(bbox_2d_input)[:, None, :]
+        pv_maps_input = vector_maps_to_patches(pv_maps_input, H // self.patch_size, W // self.patch_size)
+        pv_maps_input_token = self.pv_map_embed(pv_maps_input)
+        patch_tokens = patch_tokens + pv_maps_input_token
+        # bbox_2d_input= bbox_2d_input.view(B * S, -1)
+        # camera_info_token = self.bbox_2d_embed(pv_maps_input)[:, None, :]
 
         # Concatenate special tokens with patch tokens
-        tokens = torch.cat([camera_token, confidence_token, camera_info_token, register_token, patch_tokens], dim=1)
+        tokens = torch.cat([confidence_token, register_token, patch_tokens], dim=1)
+
+        # 为每个token添加身份ID区别查询和参考图像
+        num_tokens_per_image = tokens.shape[1]
+        # 创建身份ID
+        query_ids = torch.zeros(B, 1, num_tokens_per_image).long().to(tokens.device)
+        ref_ids = torch.ones(B, S - 1, num_tokens_per_image).long().to(tokens.device)
+        segment_ids = torch.cat([query_ids, ref_ids], dim=1) # 形状 (B, S, total_tokens)
+        segment_embeddings = self.segment_embedding(segment_ids).view(B * S, num_tokens_per_image, -1) # 形状 (B, S, total_tokens, C)
+
+        tokens = tokens + segment_embeddings
 
         pos = None
         if self.rope is not None:

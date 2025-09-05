@@ -3,11 +3,13 @@ import json
 import torch
 import cv2
 import numpy as np
+import time
 
 import albumentations as A
 
 from utils.geometry import matrix_to_rot6d_numpy, translation_parameterization, compute_normalization_scale, warp_intrinsics, project_3d_box_to_2d
 from .utils import load_and_preprocess_images, load_images, get_transform, images_augment
+from src.utils.pixel_voting import generate_pvmap_wo_mask, generate_pvmap_batch, generate_pvmap_batch_numba
 
 class Onepose(torch.utils.data.Dataset):
     def __init__(self, config, transform=None):
@@ -148,12 +150,19 @@ class Onepose(torch.utils.data.Dataset):
         query_ref_poses = np.concatenate((query_pose[None, ...], ref_poses), axis=0)
         query_ref_intrinsics = np.concatenate((query_intrinsics, ref_intrinsics), axis=0)
         bbox_2d = project_3d_box_to_2d(bbox_3d, query_ref_poses, query_ref_intrinsics)
+        
+        # Generate GT Point-Voting map
+        # pv_maps = generate_pvmap_batch(bbox_2d, [self.target_size, self.target_size])
+        # pv_maps = generate_pvmap_batch_numba(bbox_2d, [self.target_size, self.target_size])
+        pv_maps = []
+        for i in range(query_ref_poses.shape[0]):
+            pv_map = generate_pvmap_wo_mask(bbox_2d[i], [self.target_size, self.target_size])
+            pv_maps.append(pv_map)
+        pv_maps = np.array(pv_maps, dtype=np.float32)
+        pv_maps_offset = pv_maps[:1] - pv_maps
+
         # Normalize 2D bounding box
         bbox_2d = bbox_2d / self.target_size 
-
-        # Generate 2D bbox offset labels
-        bbox_2d_offset = (bbox_2d - bbox_2d[0]).reshape(-1, 16)
-
         query_info = {
             'query_pose': np.array(query_pose[None, ...], dtype=np.float32), #query_pose[None, ...],
             'query_intrinsics': np.array(query_intrinsics, dtype=np.float32), #query_intrinsic,
@@ -170,50 +179,21 @@ class Onepose(torch.utils.data.Dataset):
             'ref_crop_centers': np.array(ref_crop_centers, dtype=np.float32), #ref_crop_centers,
             'ref_crop_shapes': np.array(ref_crop_shapes, dtype=np.float32), #ref_crop_shapes,
             'ref_zoom_ratios': np.array(ref_zoom_ratios, dtype=np.float32), #ref_zoom_ratios,
+            'pv_maps': np.array(pv_maps[1:], dtype=np.float32), #pv_maps[1:],
             'bbox_2d': bbox_2d[1:],
             'bbox_3d': bbox_3d,
             'ref_shapes': np.array([self.width, self.height], dtype=np.float32).repeat(len(ref_poses), axis=0),
         }
-        # query_info = {
-        #     'query_pose': query_pose[None, ...],
-        #     'query_intrinsics': query_intrinsics,
-        #     'query_crop_center': query_crop_center,
-        #     'query_crop_shape': query_crop_shape,
-        #     'query_zoom_ratio': query_zoom_ratio,
-        #     'query_shape': np.array([self.width, self.height]),
-        #     'bbox_2d': bbox_2d[:1],
-        #     'obj_scale': np.array(obj_scale, dtype=np.float32),
-        # }
-        # ref_info = {
-        #     'ref_poses': ref_poses,
-        #     'ref_intrinsics': ref_intrinsics,
-        #     'ref_crop_centers': ref_crop_centers,
-        #     'ref_crop_shapes': ref_crop_shapes,
-        #     'ref_zoom_ratios': ref_zoom_ratios,
-        #     'bbox_2d': bbox_2d[1:],
-        #     'bbox_3d': bbox_3d,
-        #     'ref_shapes': np.array([self.width, self.height]).repeat(len(ref_poses), axis=0),
-        # }
 
-        # Construct pose and intrinsics input
-        # intrinsics = np.concatenate((query_intrinsics, ref_intrinsics), axis=0)
-        # intrinsics = np.array([[intrinsic[0, 0]/self.target_size, intrinsic[1, 1]/self.target_size, intrinsic[0, 2]/self.target_size, intrinsic[1, 2]/self.target_size] for intrinsic in intrinsics])
-        # query_ref_rot_mats = np.concatenate((np.eye(3)[None, ...], ref_rot_mats), axis=0)
-        # query_ref_rot_6d = matrix_to_rot6d_numpy(query_ref_rot_mats)
-        # query_ref_trans_params = np.concatenate((np.array([[0, 0, 0]]), ref_trans_params), axis=0)
-        # query_ref_pose_params = np.concatenate((query_ref_trans_params, query_ref_rot_6d), axis=1)
-        # pose_intr_input = np.concatenate((intrinsics, query_ref_pose_params), axis=1)
+        pv_maps_input = np.concatenate((np.zeros((1, self.target_size, self.target_size, 16)), pv_maps[1:]), axis=0)
 
-        # Construct 2d bbox input
-        bbox_2d_input = np.concatenate((np.zeros((1, 8, 2)), bbox_2d[1:]), axis=0).reshape(-1, 16)
-        
-
-        return bbox_2d_offset, bbox_2d_input, query_info, ref_info
+        return pv_maps_offset, pv_maps_input, query_info, ref_info
 
     def __len__(self):
         return len(self.data_list)
     
     def __getitem__(self, idx):
+        # t1 = time.time()
         data = self.data_list[idx]
         
         color = data['color']
@@ -231,18 +211,19 @@ class Onepose(torch.utils.data.Dataset):
         # )
         ref_images, ref_bbox_centers, ref_bbox_shapes, ref_zoom_ratios = self.read_ref_images([ref_data['color'] for ref_data in ref_data_list])
         query_ref_images = np.concatenate((query_image, ref_images), axis=0)
-
+        # t2 = time.time()
+        # print("Image loading and preprocessing time: {:.4f} s".format(t2 - t1))
         # Generate the ground truth labels
-        bbox_2d_offset_label, bbox_2d_input, query_info, ref_info = self.gen_labels(data, ref_data_list, 
+        pv_maps_offset, pv_maps_input, query_info, ref_info = self.gen_labels(data, ref_data_list, 
                                                                     query_bbox_center, query_bbox_shape, query_zoom_ratio, 
                                                                     ref_bbox_centers, ref_bbox_shapes, ref_zoom_ratios, obj_scale)
         
         data_dict = {
             'images': torch.from_numpy(query_ref_images).float(),
-            'bbox_2d_offset_label': torch.from_numpy(bbox_2d_offset_label).float(),
+            'pv_maps_offset': torch.from_numpy(pv_maps_offset).float(),
             'query_info': query_info,
             'ref_info': ref_info,
-            'bbox_2d_input': torch.from_numpy(bbox_2d_input).float(),
+            'pv_maps_input': torch.from_numpy(pv_maps_input).float(),
         }
 
         if self.vis_query:
@@ -262,7 +243,8 @@ class Onepose(torch.utils.data.Dataset):
                 cv2.circle(denorm_img, (int(bbox[0]*self.target_size), int(bbox[1]*self.target_size)), 5, (0, 255, 0), 2)
             # cv2.circle(denorm_img, (100, 100), 10, (0, 0, 255), 2)
             cv2.imwrite('query.png', cv2.cvtColor(denorm_img, cv2.COLOR_RGB2BGR))
-
+        # t3 = time.time()
+        # print("Data loading and processing time: {:.4f} s".format(t3 - t1))
         return data_dict
 
 import random

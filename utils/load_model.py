@@ -7,6 +7,7 @@ from src.models.pose_head import PoseHead
 from src.models.pose_head_split import PoseHeadSplit
 from src.models.bbox_conf import BBoxConf
 from src.models.pggt import PGGT
+from src.models.pixel_voting_head import VectorMapDecoder
 
 
 def load_model(config, device="cuda"):
@@ -28,11 +29,12 @@ def load_model(config, device="cuda"):
             patch_embed=config_model.backbone.patch_embed,
             load_pretrained_dino_weights=config_model.backbone.load_pretrained_dino_weights
         )
-
-    if config_model.posehead.name == "posehead":
-        pose_head = PoseHead(config_model.posehead)
-    elif config_model.posehead.name == "bboxconf":
-        pose_head = BBoxConf(config_model.posehead)
+    
+    pose_head = VectorMapDecoder()
+    # if config_model.posehead.name == "posehead":
+    #     pose_head = PoseHead(config_model.posehead)
+    # elif config_model.posehead.name == "bboxconf":
+    #     pose_head = BBoxConf(config_model.posehead)
     
 
     model = PGGT(config_model, backbone, pose_head).to(device)       

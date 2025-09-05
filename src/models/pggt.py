@@ -1,6 +1,6 @@
 import torch
 import torch.nn as nn
-
+import time
 
 class PGGT(nn.Module):
     def __init__(self, config, backbone, pose_head):
@@ -17,14 +17,9 @@ class PGGT(nn.Module):
 
     def forward(self, data, device):
         images = data['images'].to(device)
-        bbox_2d_input = data['bbox_2d_input'].to(device)
-        aggregated_tokens_list, patch_start_idx = self.backbone(images, bbox_2d_input)
-        pred_pose_enc_list, pred_conf_list = self.pose_head(aggregated_tokens_list)
+        pv_maps_input = data['pv_maps_input'].to(device)
+        aggregated_tokens_list, patch_start_idx = self.backbone(images, pv_maps_input)
+        pred_pv_map_offset, pred_conf = self.pose_head(aggregated_tokens_list[-1])
 
-        if self.training:
-            # If training, return whole output list
-            return (pred_pose_enc_list, pred_conf_list)
-        else:
-            # If not training, return only the last output
-            return ([pred_pose_enc_list[-1]], [pred_conf_list[-1]])
+        return pred_pv_map_offset, pred_conf
     
