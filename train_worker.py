@@ -184,6 +184,7 @@ def train_worker(gpu_id: int, config: OmegaConf):
             # if random.random() < 0.8:
             #     data = next(data1_iter)
             # Zero the gradients
+            t1 = time.time()
             optimizer.zero_grad()
             with torch.cuda.amp.autocast(dtype=dtype):
                 # Forward pass
@@ -248,8 +249,14 @@ def train_worker(gpu_id: int, config: OmegaConf):
                         writer.add_image(f'Val_images/{idx}', image, step)
                 model.train()
             dist.barrier()
-                
+            t3 = time.time()
+            if gpu_id == 0:
+                if t1 - t2 > 5 or t3 - t1 > 5:
+                    print('Data time: ', t1 - t2)
+                    print('Forward and backward time: ', t3 - t1)
+            t2 = time.time()
     # Finalize training and save model                
+    
     if gpu_id == 0:
         save_model(config, step, f'{step:06d}', model, optimizer, scheduler)
 

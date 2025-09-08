@@ -16,6 +16,7 @@ from vggt.layers.rope import RotaryPositionEmbedding2D, PositionGetter
 from vggt.layers.vision_transformer import vit_small, vit_base, vit_large, vit_giant2
 from vggt.layers.mlp import Mlp
 from src.utils.pixel_voting import vector_maps_to_patches
+from src.models.transformer import CrossAttentionBlock, PairwiseInteractionModelWithRoPE
 
 logger = logging.getLogger(__name__)
 
@@ -114,17 +115,41 @@ class Aggregator(nn.Module):
             ]
         )
 
-        self.global_blocks = nn.ModuleList(
+        # self.global_blocks = nn.ModuleList(
+        #     [
+        #         block_fn(
+        #             dim=embed_dim,
+        #             num_heads=num_heads,
+        #             mlp_ratio=mlp_ratio,
+        #             qkv_bias=qkv_bias,
+        #             proj_bias=proj_bias,
+        #             ffn_bias=ffn_bias,
+        #             init_values=init_values,
+        #             qk_norm=qk_norm,
+        #             rope=self.rope,
+        #         )
+        #         for _ in range(depth)
+        #     ]
+        # )
+
+        # self.cross_blocks = nn.ModuleList(
+        #     [
+        #         CrossAttentionBlock(
+        #             dim=embed_dim,
+        #             num_heads=num_heads,
+        #             rope=self.rope,
+        #             mlp_ratio=mlp_ratio,
+        #         )
+        #         for _ in range(depth)
+        #     ]
+        # )
+        
+        self.cross_blocks = nn.ModuleList(
             [
-                block_fn(
+                PairwiseInteractionModelWithRoPE(
                     dim=embed_dim,
+                    num_blocks=1,
                     num_heads=num_heads,
-                    mlp_ratio=mlp_ratio,
-                    qkv_bias=qkv_bias,
-                    proj_bias=proj_bias,
-                    ffn_bias=ffn_bias,
-                    init_values=init_values,
-                    qk_norm=qk_norm,
                     rope=self.rope,
                 )
                 for _ in range(depth)
@@ -288,7 +313,7 @@ class Aggregator(nn.Module):
         frame_idx = 0
         global_idx = 0
         output_list = []
-
+        # self._process_cross_attention(tokens, B, S, P, C, frame_idx, pos=pos)
         for _ in range(self.aa_block_num):
             for attn_type in self.aa_order:
                 if attn_type == "frame":
@@ -296,7 +321,10 @@ class Aggregator(nn.Module):
                         tokens, B, S, P, C, frame_idx, pos=pos
                     )
                 elif attn_type == "global":
-                    tokens, global_idx, global_intermediates = self._process_global_attention(
+                    # tokens, global_idx, global_intermediates = self._process_global_attention(
+                    #     tokens, B, S, P, C, global_idx, pos=pos
+                    # )
+                    tokens, global_idx, global_intermediates = self._process_cross_attention(
                         tokens, B, S, P, C, global_idx, pos=pos
                     )
                 else:
@@ -305,6 +333,7 @@ class Aggregator(nn.Module):
             for i in range(len(frame_intermediates)):
                 # concat frame and global intermediates, [B x S x P x 2C]
                 concat_inter = torch.cat([frame_intermediates[i], global_intermediates[i]], dim=-1)
+                # concat_inter = torch.cat([frame_intermediates[i], frame_intermediates[i]], dim=-1)
                 output_list.append(concat_inter)
 
         del concat_inter
@@ -352,6 +381,23 @@ class Aggregator(nn.Module):
             intermediates.append(tokens.view(B, S, P, C))
 
         return tokens, global_idx, intermediates
+    
+    def _process_cross_attention(self, tokens,  B, S, P, C, global_idx, pos=None):
+        # tokens = tokens + pos
+        tokens = tokens.view(B, S, P, C)
+        pos = pos.view(B, S, P, 2)
+        query_tokens = tokens[:, 0, :, :]
+        ref_tokens = tokens[:, 1:, :, :]
+        query_pos = pos[:, 0, :, :]
+        ref_pos = pos[:, 1:, :, :]
+        intermediates = []
+
+        relationship_features = self.cross_blocks[global_idx](query_tokens, ref_tokens, query_pos, ref_pos)
+        tokens = torch.cat([tokens[:, :1, ...], relationship_features], dim=1)
+        global_idx = global_idx + 1
+        intermediates.append(tokens.view(B, S, P, C))
+        return tokens, global_idx, intermediates
+
 
 
 def slice_expand_and_flatten(token_tensor, B, S):

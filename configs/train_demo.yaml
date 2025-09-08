@@ -30,7 +30,7 @@ data:
   data_json: assets/onepose_train_demo.json
   data_root: datasets/OnePose_demo/train_data
   image_size: [512, 512] 
-  num_ref_images: 16
+  num_ref_images: 10
   target_size: ${model.backbone.img_size}
   interval: 1
   random_ref: False
@@ -52,11 +52,11 @@ train:
   master_port: 12345
   log_dir: logs/onepose_train_demo
   refine_average: False
-  batch_size: 6
+  batch_size: 4
   max_epochs: 100
   lr: 1e-4
   warmup_steps: 300
-  num_workers: 2
+  num_workers: 4
   save_itr: 1000
   metric_period: 100
   val_period: 500

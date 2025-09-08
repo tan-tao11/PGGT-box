@@ -44,6 +44,7 @@ class VectorMapDecoder(nn.Module):
     def forward(self, x):
         # 预测置信度
         conf_tokens = x[:, :, 0, :]
+        conf_tokens = conf_tokens + conf_tokens[:, :1, :]
         pred_conf = self.confidence_branch(conf_tokens)
         # Q = conf_tokens[:, :1, :]
         # F = conf_tokens

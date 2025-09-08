@@ -110,7 +110,10 @@ class Onepose(torch.utils.data.Dataset):
     def read_ref_images(self, color_path_list):
         # Load the image
         if self.config.data.augment:
+            # t1 = time.time()
             images = load_images(color_path_list)
+            # t2 = time.time()
+            # print("Open time: ", t2 - t1)
             return images_augment(images, self.transform, self.config)
         else:
             return load_and_preprocess_images(color_path_list, self.config.data.target_size)
@@ -193,7 +196,7 @@ class Onepose(torch.utils.data.Dataset):
         return len(self.data_list)
     
     def __getitem__(self, idx):
-        # t1 = time.time()
+        t1 = time.time()
         data = self.data_list[idx]
         
         color = data['color']
@@ -211,7 +214,7 @@ class Onepose(torch.utils.data.Dataset):
         # )
         ref_images, ref_bbox_centers, ref_bbox_shapes, ref_zoom_ratios = self.read_ref_images([ref_data['color'] for ref_data in ref_data_list])
         query_ref_images = np.concatenate((query_image, ref_images), axis=0)
-        # t2 = time.time()
+        t2 = time.time()
         # print("Image loading and preprocessing time: {:.4f} s".format(t2 - t1))
         # Generate the ground truth labels
         pv_maps_offset, pv_maps_input, query_info, ref_info = self.gen_labels(data, ref_data_list, 
@@ -243,7 +246,7 @@ class Onepose(torch.utils.data.Dataset):
                 cv2.circle(denorm_img, (int(bbox[0]*self.target_size), int(bbox[1]*self.target_size)), 5, (0, 255, 0), 2)
             # cv2.circle(denorm_img, (100, 100), 10, (0, 0, 255), 2)
             cv2.imwrite('query.png', cv2.cvtColor(denorm_img, cv2.COLOR_RGB2BGR))
-        # t3 = time.time()
+        t3 = time.time()
         # print("Data loading and processing time: {:.4f} s".format(t3 - t1))
         return data_dict
 

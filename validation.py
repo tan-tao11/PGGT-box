@@ -24,8 +24,8 @@ def compute_metrics(pred_pv_map_offset, pred_confs, query_info, ref_info, config
     B = pred_pv_map_offset.shape[0]
 
     # 选择置信度最高的参考视图
-    pred_confs = sigmoid(pred_confs[:, :1].to(torch.float32).cpu().numpy()) 
-    best_pred_indices = np.argmax(pred_confs, axis=1)
+    # pred_confs = torch.sigmoid(pred_confs[:, 1:].to(torch.float32)).cpu().numpy()
+    best_pred_indices = np.argmax(pred_confs[:, 1:].to(torch.float32).cpu().numpy(), axis=1)
     ref_pv_maps_best = ref_pv_maps[np.arange(ref_pv_maps.shape[0]), best_pred_indices]
     pred_pv_map_offset_best = pred_pv_map_offset[np.arange(pred_pv_map_offset.shape[0]), best_pred_indices+1].to(torch.float32).cpu().numpy()
     ref_bbox_best = ref_bbox[np.arange(ref_bbox.shape[0]), best_pred_indices]   
