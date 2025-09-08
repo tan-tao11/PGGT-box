@@ -275,8 +275,8 @@ def read_reference_data(ref_sequence_path, num_reference_images=20, obj_scale=1)
 def read_sequence_data(sequence_path, ref_sequence_path=None, interval=1, obj_scale=1):
     sequence_data_list = []
     color_path = os.path.join(sequence_path, 'color')
-    # color_files = sorted(os.listdir(color_path), key=lambda x: int(x.split('.')[0]))
-    for file in os.listdir(color_path)[::interval]:
+    color_files = sorted(os.listdir(color_path), key=lambda x: int(x.split('.')[0]))
+    for file in color_files[::interval]:
         if file.endswith('.jpg') or file.endswith('.png'):
             color_file = os.path.join(color_path, file)
             intrinsics_file = os.path.join(sequence_path, 'intrin_ba', file.replace('.jpg', '.txt').replace('.png', '.txt'))

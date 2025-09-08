@@ -46,7 +46,7 @@ data1:
   crop_ratio: 2
   augment: True
 
-checkpoint: null # runs/ckpt_005700.pt
+checkpoint: null #runs/ckpt_001000.pt
 train:
   master_addr: localhost
   master_port: 12345
@@ -58,7 +58,7 @@ train:
   warmup_steps: 300
   num_workers: 6
   save_itr: 1000
-  metric_period: 100
+  metric_period: 1
   val_period: 500
   occlusion_threshold: 0.8
   conf_T: 1.0
@@ -74,7 +74,7 @@ val:
     data_root: datasets/OnePose_demo/val_data
     image_size: [512, 512] 
     target_size: ${model.backbone.img_size}
-    num_ref_images: 16
+    num_ref_images: 10
     interval: 10
     normalize_scale: True
     augment: False

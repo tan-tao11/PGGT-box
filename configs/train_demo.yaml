@@ -74,7 +74,7 @@ val:
     data_root: datasets/OnePose_demo/val_data
     image_size: [512, 512] 
     target_size: ${model.backbone.img_size}
-    num_ref_images: 16
+    num_ref_images: 10
     interval: 10
     normalize_scale: True
     augment: False

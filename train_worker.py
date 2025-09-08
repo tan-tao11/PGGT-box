@@ -157,17 +157,17 @@ def train_worker(gpu_id: int, config: OmegaConf):
 
         writer = SummaryWriter(log_dir=tb_folder)
 
-        # model.eval()
-        # loss_dict, rotation_angle_error, translation_error, ratio, vis_images = validate_model(model.module, config, device)
-        # for key, value in loss_dict.items():
-        #     writer.add_scalar(f'Val_loss/{key}', value, step)
-        # writer.add_scalar('Rotation Angle Error/val', rotation_angle_error, step)
-        # writer.add_scalar('Translation Error/val', translation_error, step)
-        # writer.add_scalar('Ratio/val', ratio, step)
-        # if len(vis_images) > 0:
-        #     for idx, image in enumerate(vis_images):
-        #         writer.add_image(f'Val_images/{idx}', image, step)
-        # model.train()
+        model.eval()
+        loss_dict, rotation_angle_error, translation_error, ratio, vis_images = validate_model(model.module, config, device)
+        for key, value in loss_dict.items():
+            writer.add_scalar(f'Val_loss/{key}', value, step)
+        writer.add_scalar('Rotation Angle Error/val', rotation_angle_error, step)
+        writer.add_scalar('Translation Error/val', translation_error, step)
+        writer.add_scalar('Ratio/val', ratio, step)
+        if len(vis_images) > 0:
+            for idx, image in enumerate(vis_images):
+                writer.add_image(f'Val_images/{idx}', image, step)
+        model.train()
     dist.barrier()
 
     # Training loop
