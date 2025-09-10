@@ -19,7 +19,8 @@ class PGGT(nn.Module):
         images = data['images'].to(device)
         pv_maps_input = data['pv_maps_input'].to(device)
         aggregated_tokens_list, patch_start_idx = self.backbone(images, pv_maps_input)
-        pred_pv_map_offset, pred_conf = self.pose_head(aggregated_tokens_list[-1])
+        with torch.autocast("cuda", enabled=False):
+            pred_pv_map_offset, pred_conf = self.pose_head(aggregated_tokens_list[-1])
 
         return pred_pv_map_offset, pred_conf
     

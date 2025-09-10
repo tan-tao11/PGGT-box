@@ -115,22 +115,22 @@ class Aggregator(nn.Module):
             ]
         )
 
-        # self.global_blocks = nn.ModuleList(
-        #     [
-        #         block_fn(
-        #             dim=embed_dim,
-        #             num_heads=num_heads,
-        #             mlp_ratio=mlp_ratio,
-        #             qkv_bias=qkv_bias,
-        #             proj_bias=proj_bias,
-        #             ffn_bias=ffn_bias,
-        #             init_values=init_values,
-        #             qk_norm=qk_norm,
-        #             rope=self.rope,
-        #         )
-        #         for _ in range(depth)
-        #     ]
-        # )
+        self.global_blocks = nn.ModuleList(
+            [
+                block_fn(
+                    dim=embed_dim,
+                    num_heads=num_heads,
+                    mlp_ratio=mlp_ratio,
+                    qkv_bias=qkv_bias,
+                    proj_bias=proj_bias,
+                    ffn_bias=ffn_bias,
+                    init_values=init_values,
+                    qk_norm=qk_norm,
+                    rope=self.rope,
+                )
+                for _ in range(depth)
+            ]
+        )
 
         # self.cross_blocks = nn.ModuleList(
         #     [
@@ -144,17 +144,17 @@ class Aggregator(nn.Module):
         #     ]
         # )
         
-        self.cross_blocks = nn.ModuleList(
-            [
-                PairwiseInteractionModelWithRoPE(
-                    dim=embed_dim,
-                    num_blocks=1,
-                    num_heads=num_heads,
-                    rope=self.rope,
-                )
-                for _ in range(depth)
-            ]
-        )
+        # self.cross_blocks = nn.ModuleList(
+        #     [
+        #         PairwiseInteractionModelWithRoPE(
+        #             dim=embed_dim,
+        #             num_blocks=1,
+        #             num_heads=num_heads,
+        #             rope=self.rope,
+        #         )
+        #         for _ in range(depth)
+        #     ]
+        # )
 
         self.depth = depth
         self.aa_order = aa_order
@@ -321,12 +321,12 @@ class Aggregator(nn.Module):
                         tokens, B, S, P, C, frame_idx, pos=pos
                     )
                 elif attn_type == "global":
-                    # tokens, global_idx, global_intermediates = self._process_global_attention(
-                    #     tokens, B, S, P, C, global_idx, pos=pos
-                    # )
-                    tokens, global_idx, global_intermediates = self._process_cross_attention(
+                    tokens, global_idx, global_intermediates = self._process_global_attention(
                         tokens, B, S, P, C, global_idx, pos=pos
                     )
+                    # tokens, global_idx, global_intermediates = self._process_cross_attention(
+                    #     tokens, B, S, P, C, global_idx, pos=pos
+                    # )
                 else:
                     raise ValueError(f"Unknown attention type: {attn_type}")
 

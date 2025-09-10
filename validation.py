@@ -11,7 +11,7 @@ from src.metrics.pose_metric import rotation_matrix_angle_error
 from src.losses.loss import cal_loss
 from src.losses.loss_with_conf import cal_loss_with_confidence, compute_camera_loss
 from utils.math_utils import sigmoid
-from src.utils.pixel_voting import find_keypoints_from_vector_map
+from src.utils.pixel_voting import find_keypoints_from_vector_map, _find_single_keypoint_ransac_refined
 
 def compute_metrics(pred_pv_map_offset, pred_confs, query_info, ref_info, config, is_train=True):
     query_pose = query_info['query_pose'].numpy()
@@ -26,9 +26,9 @@ def compute_metrics(pred_pv_map_offset, pred_confs, query_info, ref_info, config
     # 选择置信度最高的参考视图
     # pred_confs = torch.sigmoid(pred_confs[:, 1:].to(torch.float32)).cpu().numpy()
     best_pred_indices = np.argmax(pred_confs[:, 1:].to(torch.float32).cpu().numpy(), axis=1)
-    ref_pv_maps_best = ref_pv_maps[np.arange(ref_pv_maps.shape[0]), best_pred_indices]
-    pred_pv_map_offset_best = pred_pv_map_offset[np.arange(pred_pv_map_offset.shape[0]), best_pred_indices+1].to(torch.float32).cpu().numpy()
-    ref_bbox_best = ref_bbox[np.arange(ref_bbox.shape[0]), best_pred_indices]   
+    ref_pv_maps_best = ref_pv_maps[np.arange(ref_pv_maps.shape[0]), best_pred_indices[:,0]]
+    pred_pv_map_offset_best = pred_pv_map_offset[np.arange(pred_pv_map_offset.shape[0]), best_pred_indices[:,0]+1].to(torch.float32).cpu().numpy()
+    ref_bbox_best = ref_bbox[np.arange(ref_bbox.shape[0]), best_pred_indices[:,0]]   
     # 计算查询图像的向量图
     query_pv_maps = pred_pv_map_offset_best + ref_pv_maps_best
     # 计算关键点坐标，RANSAC
@@ -36,7 +36,8 @@ def compute_metrics(pred_pv_map_offset, pred_confs, query_info, ref_info, config
     query_trans_pred = np.zeros((B, 3))
     keypoints_coords_list = []
     for i in range(B):
-        keypoints_coords = find_keypoints_from_vector_map(query_pv_maps[i, 0])
+        keypoints_coords = find_keypoints_from_vector_map(query_pv_maps[i])
+        # keypoints_coords = _find_single_keypoint_ransac_refined(query_pv_maps[i])
         keypoints_coords_list.append(keypoints_coords)
         query_rot_pred[i], query_trans_pred[i] = compute_pose_via_pnp(keypoints_coords, bbox_3d[i], query_intrinsics[i][0])
     
@@ -44,7 +45,7 @@ def compute_metrics(pred_pv_map_offset, pred_confs, query_info, ref_info, config
     rotation_angle_error = rotation_matrix_angle_error(query_rot_pred, query_pose[:, 0, :3, :3])
     translation_error = np.linalg.norm(query_trans_pred - query_pose[:, 0, :3, 3]) * 1000
 
-    return np.mean(rotation_angle_error), np.mean(translation_error), keypoints_coords_list[0], gt_query_bbox[0, 0], ref_bbox_best[0, 0], best_pred_indices[0, 0]
+    return np.mean(rotation_angle_error), np.mean(translation_error), keypoints_coords_list[0], gt_query_bbox[0, 0], ref_bbox_best[0], best_pred_indices[0, 0]
     
 
 def validate_model(model, config, device, writer=None):
@@ -71,6 +72,7 @@ def validate_model(model, config, device, writer=None):
         "loss_pv_map": 0,
         "loss_conf": 0,
     }
+    loss_conf = {}
     len_data = len(data_loader)
     vis_itr = len_data // 5
     with torch.no_grad():
@@ -84,7 +86,7 @@ def validate_model(model, config, device, writer=None):
             
             for key, value in loss_dict.items():
                 loss_dict_all[key] += value.item() / len_data
-
+            loss_conf[idx] = loss_dict['loss_conf'].item()
             # Compute metrics
             query_info = data['query_info']
             ref_info = data['ref_info']
@@ -108,7 +110,7 @@ def validate_model(model, config, device, writer=None):
 def vis(image, query_bbox, gt_query_bbox, config):
     def denormalize_img(img, mean=(0.485, 0.456, 0.406), std=(0.229, 0.224, 0.225)):
                 """
-                反归一化图像张量，输入 tensor 为 (3, H, W)
+                反归一化图像张量，输入 tensor 为 (3, H, W)·
                 """
                 mean = np.array(mean).reshape(3, 1, 1)
                 std = np.array(std).reshape(3, 1, 1)

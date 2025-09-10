@@ -54,7 +54,7 @@ class VectorMapDecoder(nn.Module):
         # pred_conf = (Q_expand * F_norm).sum(dim=-1)[..., None]  # (B, N)
 
         # x 的输入形状: (b, n_maps, num_patches, in_dim)
-        x = x[:, :, 5:, :]
+        x = x[:, :, 5:, :] - x[:, :, 5:6, :] 
         b, n_maps, patch_count_s, in_dim = x.shape
         patch_count = torch.sqrt(torch.tensor(patch_count_s)).int()
         x = x.view(b * n_maps, -1, in_dim)

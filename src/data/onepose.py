@@ -9,7 +9,7 @@ import albumentations as A
 
 from utils.geometry import matrix_to_rot6d_numpy, translation_parameterization, compute_normalization_scale, warp_intrinsics, project_3d_box_to_2d
 from .utils import load_and_preprocess_images, load_images, get_transform, images_augment
-from src.utils.pixel_voting import generate_pvmap_wo_mask, generate_pvmap_batch, generate_pvmap_batch_numba
+from src.utils.pixel_voting import generate_pvmap_wo_mask, generate_pvmap_batch, generate_pvmap_batch_numba, generate_all_pvmaps_numba_serial
 
 class Onepose(torch.utils.data.Dataset):
     def __init__(self, config, transform=None):
@@ -162,6 +162,7 @@ class Onepose(torch.utils.data.Dataset):
             pv_map = generate_pvmap_wo_mask(bbox_2d[i], [self.target_size, self.target_size])
             pv_maps.append(pv_map)
         pv_maps = np.array(pv_maps, dtype=np.float32)
+
         pv_maps_offset = pv_maps[:1] - pv_maps
 
         # Normalize 2D bounding box

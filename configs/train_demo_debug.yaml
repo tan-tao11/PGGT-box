@@ -33,7 +33,7 @@ data:
   num_ref_images: 10
   target_size: ${model.backbone.img_size}
   interval: 1
-  random_ref: False
+  random_ref: True
   normalize_scale: True
   augment: True
 
@@ -46,7 +46,7 @@ data1:
   crop_ratio: 2
   augment: True
 
-checkpoint: null #runs/ckpt_001000.pt
+checkpoint: runs/ckpt_004000.pt
 train:
   master_addr: localhost
   master_port: 12345
